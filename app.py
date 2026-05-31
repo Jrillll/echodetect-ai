@@ -1,5 +1,6 @@
 import streamlit as st
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import os
 import time
 import shutil
@@ -197,13 +198,13 @@ T = TEXT[LANG]
 # ==============================================================================
 # Untuk lokal, boleh isi langsung di sini.
 # Jangan upload app.py yang berisi API key asli ke GitHub/public.
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
 
 if not GEMINI_API_KEY:
-    st.error("API Key Gemini belum ditemukan. Pastikan file .env sudah berisi GEMINI_API_KEY.")
+    st.error("API Key Gemini belum ditemukan. Isi GEMINI_API_KEY di Streamlit Secrets atau file .env.")
     st.stop()
-else:
-    genai.configure(api_key=GEMINI_API_KEY)
+
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 
 # ==============================================================================
@@ -945,107 +946,115 @@ def wait_until_gemini_file_active(gemini_file, timeout_seconds: int = 90):
             raise TimeoutError("Timeout saat menunggu file diproses Gemini.")
 
         time.sleep(2)
-        gemini_file = genai.get_file(gemini_file.name)
+        gemini_file = client.files.get(name=gemini_file.name)
 
     return gemini_file
 
 
 def analyze_audio_with_gemini(file_path: str) -> str:
-    if GEMINI_API_KEY == "PASTE_API_KEY_GEMINI_KAMU_DISINI":
-        raise ValueError("API Key Gemini belum diisi di kode.")
-
     uploaded_file = None
 
     try:
-        uploaded_file = genai.upload_file(path=file_path)
+        uploaded_file = client.files.upload(file=file_path)
         uploaded_file = wait_until_gemini_file_active(uploaded_file)
 
-        model = genai.GenerativeModel(
-    model_name="gemini-2.5-flash",
-system_instruction=(
-    "Anda adalah 'EchoDetect AI', pakar forensik audio digital dan asisten kreatif untuk content creator.\n"
-    "Tugas Anda adalah menganalisis audio dari video media sosial, mendeteksi lagu yang paling mungkin, "
-    "lalu membantu kreator memahami apakah audio tersebut cocok untuk konten mereka.\n\n"
+        system_instruction = (
+            "Anda adalah 'EchoDetect AI', pakar forensik audio digital dan asisten kreatif untuk content creator.\n"
+            "Tugas Anda adalah menganalisis audio dari video media sosial, mendeteksi lagu yang paling mungkin, "
+            "lalu membantu kreator memahami apakah audio tersebut cocok untuk konten mereka.\n\n"
 
-    "ATURAN PENTING:\n"
-    "1. Jangan menulis jawaban seperti esai panjang.\n"
-    "2. Gunakan format Markdown yang rapi, ringkas, dan mudah discan.\n"
-    "3. Pada bagian Hasil Deteksi, tulis judul lagu dan penyanyi secara jelas.\n"
-    "4. Jika audio terdengar seperti remix, live version, sped up, slowed, mashup, atau edit viral, tulis di bagian Versi Terdeteksi.\n"
-    "5. Jika tidak yakin, jujur tulis Confidence: Sedang atau Rendah.\n"
-    "6. Jangan mengarang fakta spesifik yang tidak bisa dipastikan dari audio.\n"
-    "7. Fokus pada manfaat untuk kreator konten.\n"
-    "8. Pada bagian Arti & Makna Lagu, jangan hanya membahas potongan lirik yang terdengar di audio. "
-    "Jelaskan makna asli lagu secara keseluruhan berdasarkan konteks lagu tersebut.\n"
-    "9. Hindari terlalu banyak kutipan lirik. Jika perlu, cukup jelaskan dengan parafrase.\n"
-    "10. Pada bagian Rekomendasi Lagu Serupa, berikan lagu yang memiliki vibe, mood, energi, atau tema emosional yang mirip. "
-    "Jangan hanya memilih lagu dari penyanyi yang sama. Berikan variasi artis jika memungkinkan.\n\n"
+            "ATURAN PENTING:\n"
+            "1. Jangan menulis jawaban seperti esai panjang.\n"
+            "2. Gunakan format Markdown yang rapi, ringkas, dan mudah discan.\n"
+            "3. Pada bagian Hasil Deteksi, tulis judul lagu dan penyanyi secara jelas.\n"
+            "4. Jika audio terdengar seperti remix, live version, sped up, slowed, mashup, atau edit viral, tulis di bagian Versi Terdeteksi.\n"
+            "5. Jika tidak yakin, jujur tulis Confidence: Sedang atau Rendah.\n"
+            "6. Jangan mengarang fakta spesifik yang tidak bisa dipastikan dari audio.\n"
+            "7. Fokus pada manfaat untuk kreator konten.\n"
+            "8. Pada bagian Arti & Makna Lagu, jangan hanya membahas potongan lirik yang terdengar di audio. "
+            "Jelaskan makna asli lagu secara keseluruhan berdasarkan konteks lagu tersebut.\n"
+            "9. Hindari terlalu banyak kutipan lirik. Jika perlu, cukup jelaskan dengan parafrase.\n"
+            "10. Pada bagian Rekomendasi Lagu Serupa, berikan lagu yang memiliki vibe, mood, energi, atau tema emosional yang mirip. "
+            "Jangan hanya memilih lagu dari penyanyi yang sama. Berikan variasi artis jika memungkinkan.\n\n"
 
-    "Format output WAJIB seperti ini:\n\n"
+            "Format output WAJIB seperti ini:\n\n"
 
-    "### 🎵 Hasil Deteksi\n"
-    "**Song ID:** [Judul Lagu - Penyanyi/Kreator]\n\n"
-    "**Judul:** [Judul lagu]\n\n"
-    "**Penyanyi/Kreator:** [Nama penyanyi atau kreator]\n\n"
-    "**Versi Terdeteksi:** [Original / Live Edit / Remix / Sped Up / Slowed / Mashup / Tidak yakin]\n\n"
-    "**Confidence:** [Tinggi / Sedang / Rendah]\n\n"
+            "### 🎵 Hasil Deteksi\n"
+            "**Song ID:** [Judul Lagu - Penyanyi/Kreator]\n\n"
+            "**Judul:** [Judul lagu]\n\n"
+            "**Penyanyi/Kreator:** [Nama penyanyi atau kreator]\n\n"
+            "**Versi Terdeteksi:** [Original / Live Edit / Remix / Sped Up / Slowed / Mashup / Tidak yakin]\n\n"
+            "**Confidence:** [Tinggi / Sedang / Rendah]\n\n"
 
-    "---\n\n"
+            "---\n\n"
 
-    "### 📊 Analisis Vibe Konten\n"
-    "**Mood Utama:** [3-5 kata yang menggambarkan mood]\n\n"
-    "**Energi Audio:** [Low / Medium / High] - [penjelasan singkat]\n\n"
-    "**Kesan Audio:** [jelaskan karakter musik, emosi, tempo, dan nuansa dalam 2-3 kalimat]\n\n"
-    "**Arti & Makna Lagu:** [jelaskan makna asli lagu secara umum dalam bahasa sederhana. "
-    "Fokus pada cerita utama lagu, konflik emosional, karakter/sudut pandang, dan pesan yang ingin disampaikan. "
-    "Jangan terlalu banyak mengutip lirik. Tulis 2-4 kalimat yang mudah dipahami kreator konten.]\n\n"
+            "### 📊 Analisis Vibe Konten\n"
+            "**Mood Utama:** [3-5 kata yang menggambarkan mood]\n\n"
+            "**Energi Audio:** [Low / Medium / High] - [penjelasan singkat]\n\n"
+            "**Kesan Audio:** [jelaskan karakter musik, emosi, tempo, dan nuansa dalam 2-3 kalimat]\n\n"
+            "**Arti & Makna Lagu:** [jelaskan makna asli lagu secara umum dalam bahasa sederhana. "
+            "Fokus pada cerita utama lagu, konflik emosional, karakter/sudut pandang, dan pesan yang ingin disampaikan. "
+            "Jangan terlalu banyak mengutip lirik. Tulis 2-4 kalimat yang mudah dipahami kreator konten.]\n\n"
 
-    "---\n\n"
+            "---\n\n"
 
-    "### 🎬 Rekomendasi Penggunaan Konten\n"
-    "**Cocok untuk:**\n"
-    "- [jenis konten 1]\n"
-    "- [jenis konten 2]\n"
-    "- [jenis konten 3]\n\n"
+            "### 🎬 Rekomendasi Penggunaan Konten\n"
+            "**Cocok untuk:**\n"
+            "- [jenis konten 1]\n"
+            "- [jenis konten 2]\n"
+            "- [jenis konten 3]\n\n"
 
-    "**Kurang cocok untuk:**\n"
-    "- [jenis konten 1]\n"
-    "- [jenis konten 2]\n\n"
+            "**Kurang cocok untuk:**\n"
+            "- [jenis konten 1]\n"
+            "- [jenis konten 2]\n\n"
 
-    "**Ide Caption/Angle Konten:** [1-2 ide singkat yang relevan]\n\n"
+            "**Ide Caption/Angle Konten:** [1-2 ide singkat yang relevan]\n\n"
 
-    "---\n\n"
+            "---\n\n"
 
-    "### 🎧 Rekomendasi Lagu dengan Vibe Serupa\n"
-    "Berikan 5 rekomendasi lagu. Format setiap rekomendasi wajib seperti ini:\n\n"
-    "1. **[Judul Lagu - Penyanyi]**\n"
-    "   - **Vibe:** [3-5 kata vibe utama]\n"
-    "   - **Kenapa mirip:** [jelaskan singkat kemiripan mood, energi, tema, atau nuansa]\n"
-    "   - **Cocok untuk:** [jenis konten yang cocok]\n\n"
+            "### 🎧 Rekomendasi Lagu dengan Vibe Serupa\n"
+            "Berikan 5 rekomendasi lagu. Format setiap rekomendasi wajib seperti ini:\n\n"
+            "1. **[Judul Lagu - Penyanyi]**\n"
+            "   - **Vibe:** [3-5 kata vibe utama]\n"
+            "   - **Kenapa mirip:** [jelaskan singkat kemiripan mood, energi, tema, atau nuansa]\n"
+            "   - **Cocok untuk:** [jenis konten yang cocok]\n\n"
 
-    "Pastikan rekomendasi lagu cukup populer atau mudah dicari oleh pengguna.\n\n"
+            "Pastikan rekomendasi lagu cukup populer atau mudah dicari oleh pengguna.\n\n"
 
-    "---\n\n"
+            "---\n\n"
 
-    "### ⚠️ Creator Guardrail\n"
-    "**Risiko Konteks:** [jelaskan risiko salah konteks, lirik sensitif, atau vibe yang bisa disalahpahami]\n\n"
-    "**Catatan Hak Cipta:** [ingatkan secara singkat agar mengikuti aturan platform]\n\n"
-    "**Saran Aman:** [saran praktis agar kreator memakai audio dengan tepat]\n"
-)               
- )
+            "### ⚠️ Creator Guardrail\n"
+            "**Risiko Konteks:** [jelaskan risiko salah konteks, lirik sensitif, atau vibe yang bisa disalahpahami]\n\n"
+            "**Catatan Hak Cipta:** [ingatkan secara singkat agar mengikuti aturan platform]\n\n"
+            "**Saran Aman:** [saran praktis agar kreator memakai audio dengan tepat]\n"
+        )
 
-        response = model.generate_content(
-    [
-        uploaded_file,
-        (
+        user_prompt = (
             "Analisis audio/video ini sesuai format yang sudah ditentukan. "
             "Deteksi lagu yang paling mungkin, jelaskan vibe dan makna asli lagunya, "
             "lalu berikan rekomendasi lagu lain yang punya vibe serupa. "
             "Rekomendasi lagu harus relevan berdasarkan mood, energi, tema emosional, dan karakter musik, "
             "bukan hanya karena artisnya sama."
-        ),
-    ]
-)
+        )
+
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[
+                types.Content(
+                    role="user",
+                    parts=[
+                        types.Part.from_uri(
+                            file_uri=uploaded_file.uri,
+                            mime_type=uploaded_file.mime_type
+                        ),
+                        types.Part.from_text(text=user_prompt),
+                    ],
+                )
+            ],
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction
+            )
+        )
 
         if not response.text:
             raise ValueError("Gemini tidak mengembalikan hasil analisis.")
@@ -1055,7 +1064,7 @@ system_instruction=(
     finally:
         if uploaded_file is not None:
             try:
-                genai.delete_file(uploaded_file.name)
+                client.files.delete(name=uploaded_file.name)
             except Exception:
                 pass
 
